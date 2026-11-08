@@ -1,6 +1,6 @@
 # hello_api
 
-A tiny [FastAPI](https://fastapi.tiangolo.com/) app with four endpoints. Two return fixed messages; two ask Google's Gemini model (via Vertex AI) to write something fresh each time:
+A tiny [FastAPI](https://fastapi.tiangolo.com/) app with five endpoints. Two return fixed messages; the other three use Google's Gemini model (via Vertex AI):
 
 | Method | Path       | Response                                              |
 |--------|------------|-------------------------------------------------------|
@@ -8,12 +8,13 @@ A tiny [FastAPI](https://fastapi.tiangolo.com/) app with four endpoints. Two ret
 | GET    | `/goodbye` | `{"message": "Catch you later! Take it easy. ✌️"}`    |
 | GET    | `/haiku`   | `{"haiku": "..."}`: a short DevOps haiku by Gemini   |
 | GET    | `/fortune` | `{"fortune": "..."}`: a one-sentence software fortune by Gemini |
+| GET    | `/ask?q=...` | `{"question": "...", "answer": "..."}`: Gemini answers your question in three sentences or fewer |
 
 ## Requirements
 
 - Python 3.12 or newer
 - [Poetry](https://python-poetry.org/) 2.x
-- For `/haiku` and `/fortune`: a Google Cloud project with the Vertex AI API enabled, and the [gcloud CLI](https://cloud.google.com/sdk/docs/install)
+- For `/haiku`, `/fortune`, and `/ask`: a Google Cloud project with the Vertex AI API enabled, and the [gcloud CLI](https://cloud.google.com/sdk/docs/install)
 
 ## Install
 
@@ -67,16 +68,32 @@ To try the Gemini endpoints, set your project first:
 GOOGLE_CLOUD_PROJECT=oe-2-514017 poetry run python main.py
 curl http://localhost:8080/haiku
 curl http://localhost:8080/fortune
+curl "http://localhost:8080/ask?q=What+is+DevOps"
 ```
 
-Each Gemini reply is limited to about 100 output tokens.
+Replies from `/haiku` and `/fortune` are limited to about 100 output tokens.
+
+### Limits on `/ask`
+
+`/ask` is meant to be public, and every call costs money, so it is restricted:
+
+- `q` is required, can't be empty or only spaces, and can be at most 200 characters. Bad input gets a `400` before Gemini is called, so it costs nothing.
+- Answers are limited to about 200 output tokens.
+- A system instruction tells Gemini to answer in three sentences or fewer. This usually works, but users can try to talk the model out of it; the 200-token cap is the hard limit.
+
+These limits cap the cost of *each* call, not *how many* calls come in. Before making the service public, also consider:
+
+- Setting a maximum number of instances on Cloud Run (`--max-instances`), to cap how much traffic it can serve.
+- A budget alert in Google Cloud Billing.
+- Rate limiting or authentication, if traffic or costs become a problem.
 
 ### Errors
 
-If a Gemini call fails, the endpoint returns a JSON error like `{"error": "Gemini request failed"}` instead of crashing:
+Errors are returned as JSON, like `{"error": "Gemini request failed"}`, instead of crashing:
 
 | Status | When                                                       |
 |--------|------------------------------------------------------------|
+| 400    | `/ask`: `q` is missing, empty, or over 200 characters      |
 | 500    | `GOOGLE_CLOUD_PROJECT` isn't set, or no credentials found  |
 | 503    | Gemini is rate-limiting requests; try again later          |
 | 502    | Any other Gemini failure, such as a bad model name         |
